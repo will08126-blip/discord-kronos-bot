@@ -12,7 +12,7 @@ class SupportResistanceStrategy(TradingStrategy):
     """Trade bounces off support/resistance levels"""
     
     def __init__(self):
-        super().__init__(name="SupportResistance", weight=0.9)
+        super().__init__(name="SupportResistance", weight=0.2)
         self.levels_cache = {}  # Cache levels per symbol
         
     def analyze(self, data: pd.DataFrame, symbol: str, timeframe: str) -> Dict:

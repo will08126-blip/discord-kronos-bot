@@ -12,7 +12,7 @@ class BreakoutRetestStrategy(TradingStrategy):
     """Breakout and retest strategy for crypto"""
     
     def __init__(self):
-        super().__init__(name="BreakoutRetest", weight=1.2)  # Higher weight - proven strategy
+        super().__init__(name="BreakoutRetest", weight=0.3)  # Reduced: Kronos is CEO
         self.resistance_levels = {}
         self.support_levels = {}
         

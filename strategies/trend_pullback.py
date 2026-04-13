@@ -12,7 +12,7 @@ class TrendPullbackStrategy(TradingStrategy):
     """Trend following with pullback entries"""
     
     def __init__(self):
-        super().__init__(name="TrendPullback", weight=1.0)
+        super().__init__(name="TrendPullback", weight=0.2)
         
     def analyze(self, data: pd.DataFrame, symbol: str, timeframe: str) -> Dict:
         """

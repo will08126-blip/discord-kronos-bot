@@ -12,7 +12,7 @@ class RSIDivergenceStrategy(TradingStrategy):
     """RSI divergence detection for reversal trades"""
     
     def __init__(self):
-        super().__init__(name="RSIDivergence", weight=0.8)  # Lower weight - divergence can be early
+        super().__init__(name="RSIDivergence", weight=0.1)  # Lower weight - divergence can be early
         self.rsi_period = 14
         
     def analyze(self, data: pd.DataFrame, symbol: str, timeframe: str) -> Dict:

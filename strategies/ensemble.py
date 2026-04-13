@@ -18,7 +18,7 @@ from .rsi_divergence import RSIDivergenceStrategy
 class EnsembleStrategy:
     """Combines multiple strategies with weighted voting"""
     
-    def __init__(self, kronos_weight: float = 1.5):
+    def __init__(self, kronos_weight: float = 9.0):  # Kronos is CEO (90% weight)
         # Initialize all strategies
         self.strategies = {
             'breakout_retest': BreakoutRetestStrategy(),
