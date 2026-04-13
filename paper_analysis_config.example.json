@@ -1,0 +1,13 @@
+{
+  "discord": {
+    "token": "YOUR_BOT_TOKEN_HERE",
+    "channelId": "YOUR_CHANNEL_ID_HERE",
+    "guildId": null,
+    "paperChannelName": "paper-trading"
+  },
+  "analysis": {
+    "maxMessages": 1000,
+    "timeRangeDays": 30,
+    "outputFile": "paper_trading_analysis.md"
+  }
+}

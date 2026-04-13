@@ -1,0 +1,70 @@
+services:
+  - type: worker
+    name: discord-trading-bot
+    runtime: node
+    plan: starter           # $7/month — always-on background worker
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false          # Set in Render dashboard
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: SIGNAL_CHANNEL_ID
+        sync: false
+      - key: SUMMARY_CHANNEL_ID
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false          # Optional — for AI summaries
+      - key: MAX_OPEN_POSITIONS
+        value: "3"
+      - key: MAX_DAILY_LOSS
+        value: "150"
+      - key: MIN_SCORE_THRESHOLD
+        value: "60"
+      - key: MAX_LEVERAGE_SCALP
+        value: "50"
+      - key: MAX_LEVERAGE_SWING
+        value: "20"
+      - key: SCAN_INTERVAL_MINUTES
+        value: "5"
+      - key: ENABLED
+        value: "true"
+      - key: EXCHANGE_ID
+        value: "gate"          # Render IPs are geo-blocked by Binance (HTTP 451) — Gate.io works
+      # Leverage-adjusted profit targets
+      # earlyProfitAlertPct: alert when capital is up this fraction (0.5 = 50%)
+      # targetReturnPct:     set TP price to close at this capital return (1.0 = 100%)
+      # Set to 0 to disable either feature independently.
+      - key: EARLY_PROFIT_ALERT_PCT
+        value: "0.5"
+      - key: TARGET_RETURN_PCT
+        value: "1.0"
+      - key: PAPER_TRADING_ENABLED
+        value: "true"
+      - key: PAPER_BALANCE
+        value: "1000"
+      - key: SCALP_MONITOR_INTERVAL_SECONDS
+        value: "90"
+      - key: SWING_MONITOR_INTERVAL_SECONDS
+        value: "1200"
+      - key: COINGECKO_API_KEY
+        sync: false
+      # Bot channel management
+      # BOT_CHANNEL_NAME:   the bot creates/reuses this channel for live trade signals & daily summaries.
+      # PAPER_CHANNEL_NAME: the bot creates/reuses this channel for paper trade entries, exits & reports.
+      # Both channels are created automatically on first boot — no manual setup needed.
+      - key: BOT_CHANNEL_NAME
+        value: "bot-signals"
+      - key: PAPER_CHANNEL_NAME
+        value: "paper-trading"
+      # COINBASE_FILTER: set to "false" to signal on all top-20 cryptos regardless of exchange listing.
+      # Default "true" restricts signals to coins available on Coinbase (BASE app compatible).
+      - key: COINBASE_FILTER
+        value: "true"
+      - key: NODE_ENV
+        value: production
+    disk:
+      name: bot-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1              # $0.25/month — stores trades.json and state.json
