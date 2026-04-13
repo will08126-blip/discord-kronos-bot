@@ -1,0 +1,26 @@
+{
+  "breakout_retest": {
+    "win_rate": 0.5,
+    "total_predictions": 0,
+    "correct_predictions": 0,
+    "weight": 1.2
+  },
+  "trend_pullback": {
+    "win_rate": 0.5,
+    "total_predictions": 0,
+    "correct_predictions": 0,
+    "weight": 1.0
+  },
+  "support_resistance": {
+    "win_rate": 0.5,
+    "total_predictions": 0,
+    "correct_predictions": 0,
+    "weight": 0.9
+  },
+  "rsi_divergence": {
+    "win_rate": 0.5,
+    "total_predictions": 0,
+    "correct_predictions": 0,
+    "weight": 0.8
+  }
+}

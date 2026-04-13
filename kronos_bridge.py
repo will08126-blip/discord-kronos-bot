@@ -33,20 +33,22 @@ def predict_with_kronos(symbol, timeframe="15m"):
         predictor = KronosPredictor(model, tokenizer, max_context=512)
         print("✅ Kronos loaded", file=sys.stderr)
         
-        # Create test data (in production, fetch real OHLCV)
-        n = 500
-        base_price = get_base_price(symbol)
-        prices = base_price * np.exp(np.cumsum(np.random.normal(0.0001, 0.002, n)))
+        # Fetch 100% REAL market data or FAIL
+        from real_data_only import fetch_real_or_fail
         
-        timestamps = pd.Series(pd.date_range(start='2024-01-01', periods=n, freq='h'))
+        print(f"🔍 STRICT: Fetching 100% real data for {symbol}...", file=sys.stderr)
+        df = fetch_real_or_fail(symbol, timeframe, limit=500)
         
-        df = pd.DataFrame({
-            'open': prices * (1 + np.random.uniform(-0.001, 0.001, n)),
-            'high': prices * (1 + np.random.uniform(0, 0.005, n)),
-            'low': prices * (1 - np.random.uniform(0, 0.005, n)),
-            'close': prices,
-            'volume': np.random.uniform(1000, 5000, n)
-        })
+        print(f"✅ STRICT: Got {len(df)} REAL candles for {symbol}", file=sys.stderr)
+        
+        # Ensure we have enough data
+        if len(df) < 400:
+            raise ValueError(f"❌ Insufficient REAL data: {len(df)} candles, need 400")
+        
+        # Use the last 400 candles for prediction
+        df = df.tail(400).reset_index(drop=True)
+        timestamps = df['timestamp']
+        df = df[['open', 'high', 'low', 'close', 'volume']]
         
         # Prepare for prediction
         lookback = 400

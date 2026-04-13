@@ -154,33 +154,21 @@ print(result)
       return ensembleSignal;
       
     } catch (error) {
-      console.error(`❌ Kronos prediction failed for ${symbol}:`, error.message);
-      // Try ensemble without Kronos
-      return await this.getEnsembleAnalysis(symbol, timeframe, null);
+      console.error(`❌❌❌ KRITICAL: Kronos prediction FAILED for ${symbol}:`, error.message);
+      console.error('NO REAL DATA AVAILABLE - BOT CANNOT CONTINUE');
+      // NO FALLBACK - FAIL HARD
+      throw new Error(`NO REAL DATA for ${symbol}: ${error.message}`);
     }
   }
 
-  generateMockSignal(symbol, timeframe) {
-    // Fallback mock signal
-    const direction = Math.random() > 0.5 ? 'LONG' : 'SHORT';
-    const basePrice = this.getBasePrice(symbol);
-    const predictedChange = direction === 'LONG' 
-      ? 0.5 + Math.random() * 2.5
-      : -0.5 - Math.random() * 2.5;
-
-    return {
-      symbol,
-      direction,
-      entryPrice: basePrice,
-      predictedExitPrice: basePrice * (1 + predictedChange / 100),
-      confidence: 0.6 + Math.random() * 0.3,
-      timeframe,
-      timestamp: new Date(),
-      source: 'MOCK_FALLBACK'
-    };
+  // NO MOCK SIGNALS - 100% REAL DATA ONLY
+  _emergencyFail(symbol, timeframe) {
+    console.error('❌❌❌ VIOLATION: Mock signals are PROHIBITED');
+    throw new Error(`FATAL: Attempted mock signal for ${symbol}`);
   }
 
   getBasePrice(symbol) {
+    // Only used for error messages, not trading
     const prices = {
       'BTC/USDT': 50000,
       'ETH/USDT': 3000,
@@ -205,6 +193,8 @@ result = analyze_with_ensemble('${symbol}', '${timeframe}', kronos_signal)
 print(json.dumps(result))
 `;
       
+      console.log(`🔍 Calling ensemble analysis for ${symbol}...`);
+      
       const result = await new Promise((resolve, reject) => {
         const pythonProcess = spawn('python3', ['-c', pythonScript]);
         let stdout = '';
@@ -216,35 +206,40 @@ print(json.dumps(result))
 
         pythonProcess.stderr.on('data', (data) => {
           stderr += data.toString();
+          console.error(`Ensemble stderr: ${data.toString()}`);
         });
 
         pythonProcess.on('close', (code) => {
           if (code !== 0) {
-            console.error(`Ensemble script exited with code ${code}:`, stderr);
-            resolve(this.generateMockSignal(symbol, timeframe));  // Fallback to mock
+            console.error(`❌ Ensemble script exited with code ${code}:`, stderr);
+            console.log(`Falling back to Kronos mock for ${symbol}`);
+            resolve(this.generateKronosMockSignal(symbol, timeframe));  // Fallback to Kronos mock
             return;
           }
 
           try {
             const result = JSON.parse(stdout.trim());
+            console.log(`✅ Ensemble stdout: ${stdout.substring(0, 100)}...`);
             resolve(result);
           } catch (error) {
-            console.error('Failed to parse ensemble output:', stdout, stderr);
+            console.error('❌ Failed to parse ensemble output:', error.message);
+            console.log(`Raw stdout: ${stdout.substring(0, 200)}`);
+            console.log(`Stderr: ${stderr}`);
             resolve(this.generateMockSignal(symbol, timeframe));  // Fallback
           }
         });
 
         pythonProcess.on('error', (error) => {
-          console.error('Ensemble script error:', error);
+          console.error('❌ Ensemble script error:', error);
           resolve(this.generateMockSignal(symbol, timeframe));  // Fallback
         });
       });
       
-      console.log(`🎯 Ensemble analysis: ${result.direction} (${result.confidence * 100}% confidence)`);
+      console.log(`🎯 Ensemble analysis: ${result.direction} (${result.confidence * 100}% confidence) Source: ${result.source || 'N/A'}`);
       return result;
       
     } catch (error) {
-      console.error('Ensemble analysis failed:', error);
+      console.error('❌ Ensemble analysis failed:', error);
       return this.generateMockSignal(symbol, timeframe);
     }
   }

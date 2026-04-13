@@ -35,8 +35,13 @@ def analyze_with_ensemble(symbol: str, timeframe: str, kronos_signal: dict = Non
         Ensemble analysis result
     """
     try:
-        # Generate mock data for testing (in production, fetch real data)
-        data = generate_mock_data(symbol)
+        # Fetch 100% REAL market data or FAIL
+        from real_data_only import fetch_real_or_fail
+        
+        print(f"🔍 STRICT: Fetching 100% real data for {symbol} ({timeframe})...", file=sys.stderr)
+        data = fetch_real_or_fail(symbol, timeframe, limit=100)
+        
+        print(f"✅ STRICT: Got {len(data)} REAL candles for ensemble", file=sys.stderr)
         
         # Get ensemble analysis
         ensemble_system = get_ensemble()
