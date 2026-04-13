@@ -54,13 +54,29 @@ def predict_with_kronos(symbol, timeframe="15m"):
         lookback = 400
         pred_len = 5  # Small for speed
         
+        # Map timeframe to pandas frequency
+        freq_map = {
+            '1m': '1min',
+            '5m': '5min',
+            '15m': '15min',
+            '1h': '1h',
+            '4h': '4h',
+            '1d': '1D'
+        }
+        freq = freq_map.get(timeframe, '15min')
+        
         x_df = df.iloc[:lookback][['open', 'high', 'low', 'close', 'volume']]
         x_timestamp = timestamps.iloc[:lookback]
+        
+        # Last known timestamp
+        last_timestamp = timestamps.iloc[lookback-1]
+        
+        # Future timestamps (skip first which is last_timestamp)
         y_timestamp = pd.Series(pd.date_range(
-            start=timestamps.iloc[lookback],
-            periods=pred_len,
-            freq='h'
-        ))
+            start=last_timestamp,
+            periods=pred_len + 1,
+            freq=freq
+        ))[1:]
         
         print(f"Predicting {pred_len} candles...", file=sys.stderr)
         
