@@ -6,6 +6,7 @@
 require('dotenv').config();
 
 const { Client, GatewayIntentBits, EmbedBuilder, Events, REST, Routes, Collection } = require('discord.js');
+const { spawn } = require('child_process');
 
 // Configuration
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -75,8 +76,8 @@ class RealKronosValidator {
 
   async generateKronosSignal(symbol, timeframe) {
     if (!this.isInitialized) {
-      console.warn('⚠️ Kronos not initialized, using mock prediction');
-      return this.generateMockSignal(symbol, timeframe);
+      console.error('❌❌❌ KRITICAL: Kronos not initialized');
+      throw new Error('Kronos AI not initialized - cannot generate predictions');
     }
 
     try {
@@ -225,13 +226,13 @@ print(json.dumps(result))
             console.error('❌ Failed to parse ensemble output:', error.message);
             console.log(`Raw stdout: ${stdout.substring(0, 200)}`);
             console.log(`Stderr: ${stderr}`);
-            resolve(this.generateMockSignal(symbol, timeframe));  // Fallback
+            reject(new Error(`Invalid ensemble output: ${error.message}`));
           }
         });
 
         pythonProcess.on('error', (error) => {
           console.error('❌ Ensemble script error:', error);
-          resolve(this.generateMockSignal(symbol, timeframe));  // Fallback
+          reject(new Error(`Ensemble execution failed: ${error.message}`));
         });
       });
       
@@ -239,8 +240,8 @@ print(json.dumps(result))
       return result;
       
     } catch (error) {
-      console.error('❌ Ensemble analysis failed:', error);
-      return this.generateMockSignal(symbol, timeframe);
+      console.error('❌❌❌ KRITICAL: Ensemble analysis FAILED:', error);
+      throw new Error(`Ensemble analysis failed: ${error.message}`);
     }
   }
   

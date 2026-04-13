@@ -38,6 +38,7 @@ def analyze_with_ensemble(symbol: str, timeframe: str, kronos_signal: dict = Non
         # Fetch 100% REAL market data or FAIL
         from real_data_only import fetch_real_or_fail
         
+        # ALL debug prints go to stderr
         print(f"🔍 STRICT: Fetching 100% real data for {symbol} ({timeframe})...", file=sys.stderr)
         data = fetch_real_or_fail(symbol, timeframe, limit=100)
         
@@ -56,8 +57,9 @@ def analyze_with_ensemble(symbol: str, timeframe: str, kronos_signal: dict = Non
         return result
         
     except Exception as e:
-        print(f"Ensemble analysis error: {e}")
-        return {
+        # Print error to stderr, return error JSON to stdout
+        print(f"Ensemble analysis error: {e}", file=sys.stderr)
+        error_result = {
             "direction": "NEUTRAL",
             "confidence": 0.3,
             "details": f"Ensemble error: {str(e)[:100]}",
@@ -67,6 +69,10 @@ def analyze_with_ensemble(symbol: str, timeframe: str, kronos_signal: dict = Non
             "timeframe": timeframe,
             "source": "ENSEMBLE_ERROR"
         }
+        # IMPORTANT: Only print JSON to stdout
+        import json
+        print(json.dumps(error_result))
+        return error_result
 
 def generate_mock_data(symbol: str, periods: int = 100) -> pd.DataFrame:
     """Generate mock OHLCV data for testing"""
@@ -195,19 +201,16 @@ def format_ensemble_signal_for_discord(signal: dict) -> dict:
 
 # Test function
 if __name__ == "__main__":
-    print("Testing ensemble integration...")
+    # When called from command line, output ONLY JSON
+    import sys
+    import json
     
-    # Test with Kronos signal
-    kronos_signal = {
-        "direction": "LONG",
-        "confidence": 0.8,
-        "source": "KRONOS_AI"
-    }
+    # Get arguments
+    symbol = sys.argv[1] if len(sys.argv) > 1 else "BTC/USDT"
+    timeframe = sys.argv[2] if len(sys.argv) > 2 else "15m"
     
-    result = analyze_with_ensemble("BTC/USDT", "15m", kronos_signal)
-    print(f"Ensemble result: {result['direction']} with {result['confidence']*100:.1f}% confidence")
-    print(f"Details: {result['details'][:100]}...")
+    # Run analysis
+    result = analyze_with_ensemble(symbol, timeframe, None)
     
-    # Format for Discord
-    discord_embed = format_ensemble_signal_for_discord(result)
-    print(f"\nDiscord embed keys: {list(discord_embed.keys())}")
+    # Output ONLY JSON to stdout
+    print(json.dumps(result))
