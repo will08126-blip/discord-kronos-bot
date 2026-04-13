@@ -44,12 +44,64 @@ class RealKronosValidator {
     this.config = {
       enabled: true,
       weight: 0.3,
-      minConfidence: 0.75,  // Increased for tighter 1% SL / 2% TP
+      minConfidence: 0.75,  // Default, will be updated from mode manager
       modelPath: './models/kronos-small',
       tokenizerPath: './models/tokenizer'
     };
     this.isInitialized = false;
     this.paperTrackingEnabled = true;
+    
+    // Initialize with current mode confidence threshold
+    this.updateConfidenceThreshold();
+  }
+  
+  async updateConfidenceThreshold() {
+    try {
+      const { spawn } = require('child_process');
+      const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from mode_manager import mode_manager
+import json
+
+threshold = mode_manager.get_confidence_threshold()
+mode = mode_manager.get_current_mode()
+print(json.dumps({'threshold': threshold, 'mode': mode}))
+`;
+      
+      const result = await new Promise((resolve, reject) => {
+        const pythonProcess = spawn('python3', ['-c', pythonScript]);
+        let stdout = '';
+        let stderr = '';
+
+        pythonProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        pythonProcess.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`Python script failed: ${stderr}`));
+            return;
+          }
+          try {
+            const result = JSON.parse(stdout.trim());
+            resolve(result);
+          } catch (error) {
+            reject(new Error('Invalid JSON from Python script'));
+          }
+        });
+      });
+      
+      this.config.minConfidence = result.threshold;
+      console.log(`🎛️ Updated confidence threshold to ${result.threshold} (${result.mode} mode)`);
+    } catch (error) {
+      console.error('Failed to update confidence threshold:', error);
+      // Keep default
+    }
   }
 
   async initialize() {
@@ -147,8 +199,8 @@ print(result)
       // Get ensemble analysis with Kronos signal
       const ensembleSignal = await this.getEnsembleAnalysis(symbol, timeframe, kronosSignal);
       
-      // Auto-create paper trade if enabled and high confidence
-      if (this.paperTrackingEnabled && ensembleSignal.confidence >= 0.75) {
+      // Auto-create paper trade if enabled (confidence check happens in Python)
+      if (this.paperTrackingEnabled) {
         this.createPaperTrade(ensembleSignal);
       }
       
@@ -402,6 +454,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await handlePaperBuy(interaction, buySymbol, direction, confidence);
         break;
       
+      case 'mode':
+        const mode = options.getString('mode');
+        await handleMode(interaction, mode);
+        break;
+      
       default:
         await interaction.editReply('Unknown command. Use `/help` for available commands.');
     }
@@ -476,7 +533,7 @@ async function handleStop(interaction) {
 async function scanCycle() {
   console.log(`📊 Running Kronos scan at ${new Date().toISOString()}`);
   
-  const assets = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'];
+  const assets = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT'];
   const timeframe = '15m';
   
   for (const asset of assets) {
@@ -622,20 +679,80 @@ async function sendKronosSignal(signal, channel) {
 }
 
 async function handleStatus(interaction) {
-  const embed = new EmbedBuilder()
-    .setTitle('🤖 Kronos Bot Status')
-    .setColor(0x0099FF)
-    .addFields(
-      { name: 'Status', value: isScanning ? '🟢 RUNNING' : '🔴 STOPPED', inline: true },
-      { name: 'Channel', value: CHANNEL_ID || 'Not set', inline: true },
-      { name: 'Kronos Mode', value: 'Real Predictions', inline: true },
-      { name: 'Scan Interval', value: '5 minutes', inline: true },
-      { name: 'Min Confidence', value: '75%', inline: true },
-      { name: 'Assets', value: 'BTC, ETH, SOL', inline: true }
-    )
-    .setTimestamp();
+  try {
+    // Get current mode from mode manager
+    const { spawn } = require('child_process');
+    const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from mode_manager import mode_manager
+import json
 
-  await interaction.editReply({ embeds: [embed] });
+mode = mode_manager.get_current_mode()
+mode_params = mode_manager.get_mode_params()
+print(json.dumps({'mode': mode, 'confidence_threshold': mode_params['confidence_threshold']}))
+`;
+    
+    const modeResult = await new Promise((resolve, reject) => {
+      const pythonProcess = spawn('python3', ['-c', pythonScript]);
+      let stdout = '';
+      let stderr = '';
+
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      pythonProcess.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`Python script failed: ${stderr}`));
+          return;
+        }
+        try {
+          const result = JSON.parse(stdout.trim());
+          resolve(result);
+        } catch (error) {
+          reject(new Error('Invalid JSON from Python script'));
+        }
+      });
+    });
+    
+    const embed = new EmbedBuilder()
+      .setTitle('🤖 Kronos Bot Status')
+      .setColor(0x0099FF)
+      .addFields(
+        { name: 'Status', value: isScanning ? '🟢 RUNNING' : '🔴 STOPPED', inline: true },
+        { name: 'Channel', value: CHANNEL_ID || 'Not set', inline: true },
+        { name: 'Trading Mode', value: modeResult.mode.charAt(0).toUpperCase() + modeResult.mode.slice(1), inline: true },
+        { name: 'Confidence Threshold', value: `${(modeResult.confidence_threshold * 100).toFixed(0)}%`, inline: true },
+        { name: 'Scan Interval', value: '5 minutes', inline: true },
+        { name: 'Assets', value: 'BTC, ETH, SOL', inline: true }
+      )
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+    
+  } catch (error) {
+    console.error('Status error:', error);
+    // Fallback to basic status
+    const embed = new EmbedBuilder()
+      .setTitle('🤖 Kronos Bot Status')
+      .setColor(0x0099FF)
+      .addFields(
+        { name: 'Status', value: isScanning ? '🟢 RUNNING' : '🔴 STOPPED', inline: true },
+        { name: 'Channel', value: CHANNEL_ID || 'Not set', inline: true },
+        { name: 'Kronos Mode', value: 'Real Predictions', inline: true },
+        { name: 'Scan Interval', value: '5 minutes', inline: true },
+        { name: 'Min Confidence', value: '75%', inline: true },
+        { name: 'Assets', value: 'BTC, ETH, SOL', inline: true }
+      )
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+  }
 }
 
 async function handleTest(interaction) {
@@ -841,6 +958,65 @@ print(json.dumps(result))
   }
 }
 
+async function handleMode(interaction, mode) {
+  try {
+    const { spawn } = require('child_process');
+    const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from mode_manager import mode_manager
+import json
+
+# Set the new mode
+success = mode_manager.set_mode('${mode}')
+if success:
+    mode_params = mode_manager.get_mode_params()
+    result = {
+        'success': True,
+        'message': f"✅ Trading mode switched to **${mode}**",
+        'mode': '${mode}',
+        'parameters': mode_params
+    }
+else:
+    result = {
+        'success': False,
+        'message': f"❌ Failed to switch mode to ${mode}. Available modes: {list(mode_manager.get_all_modes().keys())}"
+    }
+print(json.dumps(result))
+`;
+    
+    const result = await executePythonScript(pythonScript);
+    
+    if (result.success) {
+      // Update Kronos validator confidence threshold
+      await kronos.updateConfidenceThreshold();
+      
+      const embed = new EmbedBuilder()
+        .setTitle(`🎛️ Trading Mode: ${mode.charAt(0).toUpperCase() + mode.slice(1)}`)
+        .setColor(0x00FF00)
+        .setDescription(result.message)
+        .addFields(
+          { name: 'Confidence Threshold', value: `${result.parameters.confidence_threshold * 100}%`, inline: true },
+          { name: 'Leverage Range', value: `${result.parameters.min_leverage}x-${result.parameters.max_leverage}x`, inline: true },
+          { name: 'Stop Loss', value: `${result.parameters.stop_loss_percent * 100}%`, inline: true },
+          { name: 'Take Profit', value: `${result.parameters.take_profit_percent * 100}%`, inline: true },
+          { name: 'Risk per Trade', value: `${result.parameters.risk_per_trade_percent * 100}%`, inline: true },
+          { name: 'Max Position', value: `${result.parameters.max_position_percent * 100}%`, inline: true }
+        )
+        .setFooter({ text: 'Mode affects all new paper trades and signal filtering' })
+        .setTimestamp();
+      
+      await interaction.editReply({ embeds: [embed] });
+    } else {
+      await interaction.editReply(result.message);
+    }
+    
+  } catch (error) {
+    console.error('Mode switch error:', error);
+    await interaction.editReply('❌ Failed to switch trading mode.');
+  }
+}
+
 async function executePythonScript(script) {
   return new Promise((resolve, reject) => {
     const pythonProcess = spawn('python3', ['-c', script]);
@@ -889,7 +1065,8 @@ async function handleHelp(interaction) {
       { name: '/test', value: 'Send test signal', inline: true },
       { name: '/help', value: 'Show this help', inline: true },
       { name: '/predict [symbol]', value: 'Get prediction for symbol', inline: true },
-      { name: '/kronos [action]', value: 'Main Kronos command with all actions', inline: true }
+      { name: '/kronos [action]', value: 'Main Kronos command with all actions', inline: true },
+      { name: '/mode [mode]', value: 'Switch trading mode (conservative/aggressive)', inline: true }
     )
     .addFields(
       { name: '📊 Paper Trading', value: 'Auto-tracks Kronos signals with virtual account', inline: false },

@@ -6,6 +6,7 @@ Integrates paper trading with Discord slash commands
 import json
 from datetime import datetime
 from paper_tracker import tracker
+from mode_manager import mode_manager
 from typing import Dict, List
 
 def format_trade_embed(trade) -> Dict:
@@ -313,11 +314,16 @@ def handle_paper_buy(symbol: str, direction: str, confidence: float = 0.7):
 # Auto-tracking function for Kronos signals
 def auto_track_kronos_signal(signal: Dict):
     """Automatically create paper trade for Kronos signal"""
-    if signal.get('confidence', 0) >= 0.7:  # Only track high-confidence signals
+    # Get confidence threshold from current mode
+    confidence_threshold = mode_manager.get_confidence_threshold()
+    
+    if signal.get('confidence', 0) >= confidence_threshold:  # Use mode-aware threshold
         trade = tracker.create_trade(signal)
         if trade:
-            print(f"📝 Auto-created paper trade for {signal['symbol']}: {trade.id}")
+            print(f"📝 Auto-created paper trade for {signal['symbol']}: {trade.id} (Mode: {mode_manager.get_current_mode()})")
             return trade
+    else:
+        print(f"📭 Signal confidence {signal.get('confidence', 0):.2f} below threshold {confidence_threshold:.2f} for {mode_manager.get_current_mode()} mode")
     return None
 
 if __name__ == "__main__":

@@ -183,6 +183,23 @@ const commands = [
         max_value: 1.0
       }
     ]
+  },
+  // Mode Switching Command
+  {
+    name: 'mode',
+    description: 'Switch trading mode (affects risk parameters)',
+    options: [
+      {
+        name: 'mode',
+        description: 'Trading mode to switch to',
+        type: 3, // STRING
+        required: true,
+        choices: [
+          { name: 'Conservative (lower risk)', value: 'conservative' },
+          { name: 'Aggressive (higher risk)', value: 'aggressive' }
+        ]
+      }
+    ]
   }
 ];
 
@@ -207,6 +224,7 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
     console.log('  /test             - Send test signal');
     console.log('  /help             - Show help');
     console.log('  /predict [symbol] - Get prediction for symbol');
+    console.log('  /mode [mode]      - Switch trading mode (conservative/aggressive)');
     
     console.log('\n⚠️  Note: It may take a few minutes for commands to appear in Discord.');
     console.log('   Type "/" in your Discord channel to see available commands.');

@@ -10,6 +10,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import random
+from mode_manager import mode_manager
 
 class PaperTrade:
     """Represents a virtual paper trade"""
@@ -22,29 +23,38 @@ class PaperTrade:
         self.entry_price = entry_price
         self.entry_time = datetime.now().isoformat()
         
-        # SMART POSITION SIZING
+        # SMART POSITION SIZING WITH MODE PARAMETERS
         self.confidence = signal.get('confidence', 0.5)
         self.portfolio_capital = portfolio_capital
         
-        # Calculate stop loss and take profit (1% SL, 2% TP) - Professional leverage trading
-        if self.direction == 'LONG':
-            self.stop_loss = entry_price * 0.99  # 1% stop loss
-            self.take_profit = entry_price * 1.02  # 2% take profit
-            self.stop_loss_percent = 0.01
-        else:  # SHORT
-            self.stop_loss = entry_price * 1.01  # 1% stop loss
-            self.take_profit = entry_price * 0.98  # 2% take profit
-            self.stop_loss_percent = 0.01
+        # Get mode-specific parameters
+        mode_params = mode_manager.get_mode_params()
+        stop_loss_percent = mode_params["stop_loss_percent"]
+        take_profit_percent = mode_params["take_profit_percent"]
+        risk_per_trade_percent = mode_params["risk_per_trade_percent"]
+        max_position_percent = mode_params["max_position_percent"]
+        min_leverage = mode_params["min_leverage"]
+        max_leverage = mode_params["max_leverage"]
         
-        # RISK: 4% of capital per trade
-        risk_amount = portfolio_capital * 0.04  # $80 on $2000
+        # Calculate stop loss and take profit based on mode
+        if self.direction == 'LONG':
+            self.stop_loss = entry_price * (1 - stop_loss_percent)
+            self.take_profit = entry_price * (1 + take_profit_percent)
+            self.stop_loss_percent = stop_loss_percent
+        else:  # SHORT
+            self.stop_loss = entry_price * (1 + stop_loss_percent)
+            self.take_profit = entry_price * (1 - take_profit_percent)
+            self.stop_loss_percent = stop_loss_percent
+        
+        # RISK: Based on mode
+        risk_amount = portfolio_capital * risk_per_trade_percent
         
         # Position size based on risk and stop-loss distance
         # Formula: position_size = risk_amount / (entry_price * stop_loss_percent)
         risk_per_share = entry_price * self.stop_loss_percent
         
-        # Calculate maximum position we can take (50% of capital)
-        max_position_by_capital = (portfolio_capital * 0.5) / entry_price
+        # Calculate maximum position we can take (based on mode)
+        max_position_by_capital = (portfolio_capital * max_position_percent) / entry_price
         
         # Calculate ideal position based on risk
         ideal_position_by_risk = risk_amount / risk_per_share
@@ -52,22 +62,17 @@ class PaperTrade:
         # Use the SMALLER of the two (risk-based or capital-based)
         base_position_size = min(ideal_position_by_risk, max_position_by_capital)
         
-        # SMART LEVERAGE: Calculate based on confidence
-        # Start with confidence-based leverage (5x-25x)
-        confidence_leverage = max(5, min(25, self.confidence * 30))
-        
-        # Calculate what leverage this position represents
-        # leverage = position_size / base_position_without_leverage
-        # But base_position_without_leverage would be risk_amount / risk_per_share
-        # Actually, let's think differently...
+        # SMART LEVERAGE: Calculate based on confidence and mode
+        # Start with confidence-based leverage within mode range
+        confidence_leverage = max(min_leverage, min(max_leverage, self.confidence * (max_leverage * 1.5)))
         
         # If we're using less than ideal position (due to capital constraints),
         # we can use higher leverage to get closer to our risk target
         if base_position_size < ideal_position_by_risk:
             # We're capital-constrained, use higher leverage to increase risk
-            # But cap at reasonable level
+            # But cap at mode's max leverage
             needed_leverage = ideal_position_by_risk / base_position_size
-            self.leverage = min(confidence_leverage, needed_leverage, 25)
+            self.leverage = min(confidence_leverage, needed_leverage, max_leverage)
         else:
             # We're using ideal position, use confidence-based leverage
             self.leverage = confidence_leverage
@@ -78,8 +83,8 @@ class PaperTrade:
         # Convert to notional value (position value in USD)
         self.notional_value = self.position_size * entry_price
         
-        # Final safety check: cap at 50% of portfolio
-        max_position_value = portfolio_capital * 0.5
+        # Final safety check: cap at mode's max position percentage
+        max_position_value = portfolio_capital * max_position_percent
         if self.notional_value > max_position_value:
             # Scale down
             scale_factor = max_position_value / self.notional_value
@@ -93,6 +98,7 @@ class PaperTrade:
         self.pnl = 0.0
         self.pnl_percent = 0.0
         self.source = signal.get('source', 'KRONOS')
+        self.mode = mode_manager.get_current_mode()  # Store which mode created this trade
     
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON storage"""
@@ -106,7 +112,6 @@ class PaperTrade:
             'leverage': self.leverage,
             'position_size': self.position_size,
             'position_value': self.notional_value,
-            'leverage': self.leverage,
             'risk_percent': 4.0,
             'stop_loss_percent': self.stop_loss_percent,
             'status': self.status,
@@ -117,7 +122,8 @@ class PaperTrade:
             'stop_loss': self.stop_loss,
             'take_profit': self.take_profit,
             'source': self.source,
-            'confidence': self.confidence
+            'confidence': self.confidence,
+            'mode': mode_manager.get_current_mode()  # Store which mode created this trade
         }
     
     @classmethod
@@ -141,6 +147,15 @@ class PaperTrade:
         trade.take_profit = data['take_profit']
         trade.source = data['source']
         trade.confidence = data['confidence']
+        
+        # Set additional attributes that might be missing in old data
+        trade.notional_value = data.get('position_value', trade.position_size * trade.entry_price)
+        trade.stop_loss_percent = data.get('stop_loss_percent', 0.01)
+        trade.signal_id = data.get('signal_id', 'unknown')
+        
+        # Try to get mode from data, default to current mode
+        trade.mode = data.get('mode', mode_manager.get_current_mode())
+        
         return trade
     
     def update_pnl(self, current_price: float) -> Tuple[float, float]:
@@ -265,24 +280,38 @@ class PaperTradingTracker:
         except Exception as e:
             print(f"Error saving data: {e}")
     
+    def get_portfolio_value(self) -> float:
+        """Get current portfolio value including open trades"""
+        portfolio_value = self.portfolio['balance']
+        
+        # Add unrealized P&L from open trades
+        for trade in self.trades:
+            if trade.status == 'OPEN':
+                # Estimate current value (simplified)
+                current_price = self.get_current_price(trade.symbol)
+                if trade.direction == 'LONG':
+                    unrealized_pnl = (current_price - trade.entry_price) * trade.position_size
+                else:  # SHORT
+                    unrealized_pnl = (trade.entry_price - current_price) * trade.position_size
+                portfolio_value += unrealized_pnl
+        
+        return portfolio_value
+    
     def create_trade(self, signal: Dict) -> Optional[PaperTrade]:
         """Create a new paper trade from Kronos signal"""
         try:
+            # Check confidence threshold based on current mode
+            confidence_threshold = mode_manager.get_confidence_threshold()
+            signal_confidence = signal.get('confidence', 0.5)
+            
+            if signal_confidence < confidence_threshold:
+                print(f"Signal confidence {signal_confidence:.2f} below threshold {confidence_threshold:.2f} for {mode_manager.get_current_mode()} mode")
+                return None
+            
             # Get current price (mock for now - in production, fetch from API)
             current_price = self.get_current_price(signal['symbol'])
             
-            # Determine leverage based on confidence
-            confidence = signal.get('confidence', 0.5)
-            if confidence >= 0.85:
-                leverage = 25.0
-            elif confidence >= 0.75:
-                leverage = 15.0
-            elif confidence >= 0.7:
-                leverage = 5.0
-            else:
-                leverage = 1.0
-            
-            # Create trade
+            # Create trade with mode-aware parameters
             # Get current portfolio value for position sizing
             portfolio_value = self.get_portfolio_value()
             trade = PaperTrade(signal, current_price, portfolio_value)

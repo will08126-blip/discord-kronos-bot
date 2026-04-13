@@ -1,0 +1,29 @@
+{
+  "current_mode": "aggressive",
+  "modes": {
+    "conservative": {
+      "description": "Lower risk, more cautious trading",
+      "confidence_threshold": 0.75,
+      "min_leverage": 3,
+      "max_leverage": 10,
+      "stop_loss_percent": 0.02,
+      "take_profit_percent": 0.03,
+      "risk_per_trade_percent": 0.02,
+      "max_position_percent": 0.3,
+      "paper_tracking_enabled": true,
+      "auto_trade_enabled": false
+    },
+    "aggressive": {
+      "description": "Higher risk, more aggressive trading",
+      "confidence_threshold": 0.65,
+      "min_leverage": 10,
+      "max_leverage": 25,
+      "stop_loss_percent": 0.01,
+      "take_profit_percent": 0.02,
+      "risk_per_trade_percent": 0.04,
+      "max_position_percent": 0.5,
+      "paper_tracking_enabled": true,
+      "auto_trade_enabled": false
+    }
+  }
+}
