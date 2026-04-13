@@ -130,7 +130,7 @@ print(result)
       
       console.log(`✅ Kronos prediction: ${result.direction} ${result.predicted_change_pct}% (${result.confidence * 100}% confidence)`);
       
-      const signal = {
+      const kronosSignal = {
         symbol: result.symbol,
         direction: result.direction,
         entryPrice: result.entry_price,
@@ -143,16 +143,20 @@ print(result)
         id: `kronos_${Date.now()}_${symbol.replace('/', '_')}`
       };
       
+      // Get ensemble analysis with Kronos signal
+      const ensembleSignal = await this.getEnsembleAnalysis(symbol, timeframe, kronosSignal);
+      
       // Auto-create paper trade if enabled and high confidence
-      if (this.paperTrackingEnabled && signal.confidence >= 0.7) {
-        this.createPaperTrade(signal);
+      if (this.paperTrackingEnabled && ensembleSignal.confidence >= 0.7) {
+        this.createPaperTrade(ensembleSignal);
       }
       
-      return signal;
+      return ensembleSignal;
       
     } catch (error) {
       console.error(`❌ Kronos prediction failed for ${symbol}:`, error.message);
-      return this.generateMockSignal(symbol, timeframe);
+      // Try ensemble without Kronos
+      return await this.getEnsembleAnalysis(symbol, timeframe, null);
     }
   }
 
@@ -183,6 +187,66 @@ print(result)
       'SOL/USDT': 150
     };
     return prices[symbol] || 100;
+  }
+  
+  async getEnsembleAnalysis(symbol, timeframe, kronosSignal = null) {
+    try {
+      const { spawn } = require('child_process');
+      const kronosParam = kronosSignal ? JSON.stringify(kronosSignal).replace(/\\/g, '\\\\').replace(/'/g, "\\'") : 'None';
+      
+      const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from ensemble_integration import analyze_with_ensemble
+import json
+
+kronos_signal = ${kronosParam} if ${kronosParam} != 'None' else None
+result = analyze_with_ensemble('${symbol}', '${timeframe}', kronos_signal)
+print(json.dumps(result))
+`;
+      
+      const result = await new Promise((resolve, reject) => {
+        const pythonProcess = spawn('python3', ['-c', pythonScript]);
+        let stdout = '';
+        let stderr = '';
+
+        pythonProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        pythonProcess.on('close', (code) => {
+          if (code !== 0) {
+            console.error(`Ensemble script exited with code ${code}:`, stderr);
+            resolve(this.generateMockSignal(symbol, timeframe));  // Fallback to mock
+            return;
+          }
+
+          try {
+            const result = JSON.parse(stdout.trim());
+            resolve(result);
+          } catch (error) {
+            console.error('Failed to parse ensemble output:', stdout, stderr);
+            resolve(this.generateMockSignal(symbol, timeframe));  // Fallback
+          }
+        });
+
+        pythonProcess.on('error', (error) => {
+          console.error('Ensemble script error:', error);
+          resolve(this.generateMockSignal(symbol, timeframe));  // Fallback
+        });
+      });
+      
+      console.log(`🎯 Ensemble analysis: ${result.direction} (${result.confidence * 100}% confidence)`);
+      return result;
+      
+    } catch (error) {
+      console.error('Ensemble analysis failed:', error);
+      return this.generateMockSignal(symbol, timeframe);
+    }
   }
   
   async createPaperTrade(signal) {
@@ -442,6 +506,91 @@ async function sendSignalToDiscord(signal) {
   const channel = await client.channels.fetch(CHANNEL_ID);
   if (!channel) return;
   
+  // Check if this is an ensemble signal
+  if (signal.source === 'ENSEMBLE' || signal.type === 'ENSEMBLE') {
+    await sendEnsembleSignal(signal, channel);
+  } else {
+    await sendKronosSignal(signal, channel);
+  }
+}
+
+async function sendEnsembleSignal(signal, channel) {
+  try {
+    const { spawn } = require('child_process');
+    const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from ensemble_integration import format_ensemble_signal_for_discord
+import json
+
+signal_data = ${JSON.stringify(signal)}
+embed = format_ensemble_signal_for_discord(signal_data)
+print(json.dumps(embed))
+`;
+    
+    const embedData = await new Promise((resolve, reject) => {
+      const pythonProcess = spawn('python3', ['-c', pythonScript]);
+      let stdout = '';
+      let stderr = '';
+
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      pythonProcess.on('close', (code) => {
+        if (code !== 0) {
+          console.error(`Format script exited with code ${code}:`, stderr);
+          resolve(null);
+          return;
+        }
+
+        try {
+          const result = JSON.parse(stdout.trim());
+          resolve(result);
+        } catch (error) {
+          console.error('Failed to parse format output:', stdout, stderr);
+          resolve(null);
+        }
+      });
+
+      pythonProcess.on('error', (error) => {
+        console.error('Format script error:', error);
+        resolve(null);
+      });
+    });
+    
+    if (embedData) {
+      const embed = new EmbedBuilder()
+        .setTitle(embedData.title || `🎯 ENSEMBLE SIGNAL: ${signal.symbol}`)
+        .setColor(embedData.color || 0x0099FF)
+        .setDescription(embedData.description || `**${signal.direction}** ensemble signal`)
+        .setTimestamp(embedData.timestamp ? new Date(embedData.timestamp) : new Date());
+      
+      if (embedData.fields) {
+        embed.addFields(...embedData.fields);
+      }
+      
+      if (embedData.footer) {
+        embed.setFooter(embedData.footer);
+      }
+      
+      await channel.send({ embeds: [embed] });
+    } else {
+      // Fallback to simple format
+      await sendKronosSignal(signal, channel);
+    }
+    
+  } catch (error) {
+    console.error('Failed to send ensemble signal:', error);
+    await sendKronosSignal(signal, channel);
+  }
+}
+
+async function sendKronosSignal(signal, channel) {
   const changePct = ((signal.predictedExitPrice / signal.entryPrice - 1) * 100).toFixed(2);
   const confidencePct = (signal.confidence * 100).toFixed(1);
   
