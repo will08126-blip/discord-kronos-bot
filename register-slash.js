@@ -87,6 +87,102 @@ const commands = [
         ]
       }
     ]
+  },
+  // Paper Trading Commands
+  {
+    name: 'paper-start',
+    description: 'Start paper trading with virtual account',
+    options: [
+      {
+        name: 'balance',
+        description: 'Starting balance (default: $10,000)',
+        type: 10, // NUMBER
+        required: false,
+        min_value: 1000,
+        max_value: 1000000
+      }
+    ]
+  },
+  {
+    name: 'paper-stats',
+    description: 'Show paper trading statistics',
+  },
+  {
+    name: 'paper-portfolio',
+    description: 'Show open paper trades',
+  },
+  {
+    name: 'paper-history',
+    description: 'Show paper trade history',
+    options: [
+      {
+        name: 'limit',
+        description: 'Number of trades to show (default: 10)',
+        type: 4, // INTEGER
+        required: false,
+        min_value: 1,
+        max_value: 50
+      }
+    ]
+  },
+  {
+    name: 'paper-close',
+    description: 'Close paper trade(s)',
+    options: [
+      {
+        name: 'trade_id',
+        description: 'Trade ID to close (leave empty to close all)',
+        type: 3, // STRING
+        required: false
+      }
+    ]
+  },
+  {
+    name: 'paper-reset',
+    description: 'Reset paper trading portfolio',
+    options: [
+      {
+        name: 'confirm',
+        description: 'Confirm reset (required)',
+        type: 5, // BOOLEAN
+        required: false
+      }
+    ]
+  },
+  {
+    name: 'paper-buy',
+    description: 'Manually enter a paper trade',
+    options: [
+      {
+        name: 'symbol',
+        description: 'Trading symbol',
+        type: 3, // STRING
+        required: true,
+        choices: [
+          { name: 'BTC/USDT', value: 'BTC/USDT' },
+          { name: 'ETH/USDT', value: 'ETH/USDT' },
+          { name: 'SOL/USDT', value: 'SOL/USDT' }
+        ]
+      },
+      {
+        name: 'direction',
+        description: 'Trade direction',
+        type: 3, // STRING
+        required: true,
+        choices: [
+          { name: 'LONG', value: 'LONG' },
+          { name: 'SHORT', value: 'SHORT' }
+        ]
+      },
+      {
+        name: 'confidence',
+        description: 'Confidence level (0.1-1.0)',
+        type: 10, // NUMBER
+        required: false,
+        min_value: 0.1,
+        max_value: 1.0
+      }
+    ]
   }
 ];
 

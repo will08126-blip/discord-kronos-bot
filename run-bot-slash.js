@@ -48,6 +48,7 @@ class RealKronosValidator {
       tokenizerPath: './models/tokenizer'
     };
     this.isInitialized = false;
+    this.paperTrackingEnabled = true;
   }
 
   async initialize() {
@@ -129,7 +130,7 @@ print(result)
       
       console.log(`✅ Kronos prediction: ${result.direction} ${result.predicted_change_pct}% (${result.confidence * 100}% confidence)`);
       
-      return {
+      const signal = {
         symbol: result.symbol,
         direction: result.direction,
         entryPrice: result.entry_price,
@@ -138,8 +139,16 @@ print(result)
         timeframe: result.timeframe,
         timestamp: new Date(),
         source: result.source || 'REAL_KRONOS',
-        rawPrediction: result
+        rawPrediction: result,
+        id: `kronos_${Date.now()}_${symbol.replace('/', '_')}`
       };
+      
+      // Auto-create paper trade if enabled and high confidence
+      if (this.paperTrackingEnabled && signal.confidence >= 0.7) {
+        this.createPaperTrade(signal);
+      }
+      
+      return signal;
       
     } catch (error) {
       console.error(`❌ Kronos prediction failed for ${symbol}:`, error.message);
@@ -174,6 +183,69 @@ print(result)
       'SOL/USDT': 150
     };
     return prices[symbol] || 100;
+  }
+  
+  async createPaperTrade(signal) {
+    try {
+      const { spawn } = require('child_process');
+      const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from paper_commands import auto_track_kronos_signal
+import json
+
+signal = ${JSON.stringify(signal)}
+trade = auto_track_kronos_signal(signal)
+if trade:
+    print(json.dumps({"success": true, "trade_id": trade.id, "symbol": trade.symbol}))
+else:
+    print(json.dumps({"success": false, "reason": "Low confidence or error"}))
+`;
+      
+      const result = await new Promise((resolve, reject) => {
+        const pythonProcess = spawn('python3', ['-c', pythonScript]);
+        let stdout = '';
+        let stderr = '';
+
+        pythonProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        pythonProcess.on('close', (code) => {
+          if (code !== 0) {
+            console.error(`Paper trade script exited with code ${code}:`, stderr);
+            resolve({ success: false, error: stderr });
+            return;
+          }
+
+          try {
+            const result = JSON.parse(stdout.trim());
+            resolve(result);
+          } catch (error) {
+            console.error('Failed to parse paper trade output:', stdout, stderr);
+            resolve({ success: false, error: 'Invalid JSON' });
+          }
+        });
+
+        pythonProcess.on('error', (error) => {
+          resolve({ success: false, error: error.message });
+        });
+      });
+      
+      if (result.success) {
+        console.log(`📝 Auto-created paper trade: ${result.trade_id} for ${result.symbol}`);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error('Failed to create paper trade:', error);
+      return { success: false, error: error.message };
+    }
   }
 }
 
@@ -232,6 +304,42 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const symbol = options.getString('symbol') || 'BTC/USDT';
         const timeframe = options.getString('timeframe') || '15m';
         await handlePredict(interaction, symbol, timeframe);
+        break;
+      
+      // Paper Trading Commands
+      case 'paper-start':
+        const balance = options.getNumber('balance') || 10000;
+        await handlePaperStart(interaction, balance);
+        break;
+      
+      case 'paper-stats':
+        await handlePaperStats(interaction);
+        break;
+      
+      case 'paper-portfolio':
+        await handlePaperPortfolio(interaction);
+        break;
+      
+      case 'paper-history':
+        const limit = options.getInteger('limit') || 10;
+        await handlePaperHistory(interaction, limit);
+        break;
+      
+      case 'paper-close':
+        const tradeId = options.getString('trade_id');
+        await handlePaperClose(interaction, tradeId);
+        break;
+      
+      case 'paper-reset':
+        const confirm = options.getBoolean('confirm') || false;
+        await handlePaperReset(interaction, confirm);
+        break;
+      
+      case 'paper-buy':
+        const buySymbol = options.getString('symbol');
+        const direction = options.getString('direction');
+        const confidence = options.getNumber('confidence') || 0.7;
+        await handlePaperBuy(interaction, buySymbol, direction, confidence);
         break;
       
       default:
@@ -337,20 +445,33 @@ async function sendSignalToDiscord(signal) {
   const changePct = ((signal.predictedExitPrice / signal.entryPrice - 1) * 100).toFixed(2);
   const confidencePct = (signal.confidence * 100).toFixed(1);
   
+  // Determine suggested leverage
+  let leverage = '1x';
+  if (signal.confidence >= 0.85) leverage = '25x';
+  else if (signal.confidence >= 0.75) leverage = '15x';
+  else if (signal.confidence >= 0.7) leverage = '5x';
+  
+  // Paper trade status
+  let paperStatus = '';
+  if (signal.confidence >= 0.7) {
+    paperStatus = '📝 **Auto-tracked in paper trading**';
+  }
+  
   const embed = new EmbedBuilder()
     .setTitle(`🎯 KRONOS AI SIGNAL: ${signal.symbol}`)
     .setColor(signal.direction === 'LONG' ? 0x00FF00 : 0xFF0000)
-    .setDescription(`**${signal.direction}** signal detected by Kronos AI`)
+    .setDescription(`**${signal.direction}** signal detected by Kronos AI\n${paperStatus}`)
     .addFields(
       { name: 'Entry Price', value: `$${signal.entryPrice.toFixed(2)}`, inline: true },
       { name: 'Predicted Exit', value: `$${signal.predictedExitPrice.toFixed(2)}`, inline: true },
       { name: 'Predicted Change', value: `${changePct}%`, inline: true },
       { name: 'Confidence', value: `${confidencePct}%`, inline: true },
+      { name: 'Suggested Leverage', value: leverage, inline: true },
       { name: 'Timeframe', value: signal.timeframe, inline: true },
       { name: 'Source', value: signal.source, inline: true }
     )
     .setTimestamp()
-    .setFooter({ text: 'Kronos AI Trading Bot • Use /stop to pause' });
+    .setFooter({ text: 'Kronos AI Trading Bot • Use /paper-stats to track performance' });
 
   await channel.send({ embeds: [embed] });
 }
@@ -419,6 +540,198 @@ async function handlePredict(interaction, symbol, timeframe) {
   }
 }
 
+// Paper Trading Command Handlers
+async function handlePaperStart(interaction, balance) {
+  try {
+    const { spawn } = require('child_process');
+    const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from paper_commands import handle_paper_start
+import json
+
+result = handle_paper_start(${balance})
+print(json.dumps(result))
+`;
+    
+    const result = await executePythonScript(pythonScript);
+    await interaction.editReply(result);
+    
+  } catch (error) {
+    console.error('Paper start error:', error);
+    await interaction.editReply('❌ Failed to start paper trading.');
+  }
+}
+
+async function handlePaperStats(interaction) {
+  try {
+    const { spawn } = require('child_process');
+    const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from paper_commands import handle_paper_stats
+import json
+
+result = handle_paper_stats()
+print(json.dumps(result))
+`;
+    
+    const result = await executePythonScript(pythonScript);
+    await interaction.editReply(result);
+    
+  } catch (error) {
+    console.error('Paper stats error:', error);
+    await interaction.editReply('❌ Failed to get paper stats.');
+  }
+}
+
+async function handlePaperPortfolio(interaction) {
+  try {
+    const { spawn } = require('child_process');
+    const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from paper_commands import handle_paper_portfolio
+import json
+
+result = handle_paper_portfolio()
+print(json.dumps(result))
+`;
+    
+    const result = await executePythonScript(pythonScript);
+    await interaction.editReply(result);
+    
+  } catch (error) {
+    console.error('Paper portfolio error:', error);
+    await interaction.editReply('❌ Failed to get paper portfolio.');
+  }
+}
+
+async function handlePaperHistory(interaction, limit) {
+  try {
+    const { spawn } = require('child_process');
+    const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from paper_commands import handle_paper_history
+import json
+
+result = handle_paper_history(${limit})
+print(json.dumps(result))
+`;
+    
+    const result = await executePythonScript(pythonScript);
+    await interaction.editReply(result);
+    
+  } catch (error) {
+    console.error('Paper history error:', error);
+    await interaction.editReply('❌ Failed to get paper history.');
+  }
+}
+
+async function handlePaperClose(interaction, tradeId) {
+  try {
+    const { spawn } = require('child_process');
+    const tradeIdParam = tradeId ? `'${tradeId}'` : 'None';
+    const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from paper_commands import handle_paper_close
+import json
+
+result = handle_paper_close(${tradeIdParam})
+print(json.dumps(result))
+`;
+    
+    const result = await executePythonScript(pythonScript);
+    await interaction.editReply(result);
+    
+  } catch (error) {
+    console.error('Paper close error:', error);
+    await interaction.editReply('❌ Failed to close paper trade.');
+  }
+}
+
+async function handlePaperReset(interaction, confirm) {
+  try {
+    const { spawn } = require('child_process');
+    const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from paper_commands import handle_paper_reset
+import json
+
+result = handle_paper_reset(${confirm})
+print(json.dumps(result))
+`;
+    
+    const result = await executePythonScript(pythonScript);
+    await interaction.editReply(result);
+    
+  } catch (error) {
+    console.error('Paper reset error:', error);
+    await interaction.editReply('❌ Failed to reset paper trading.');
+  }
+}
+
+async function handlePaperBuy(interaction, symbol, direction, confidence) {
+  try {
+    const { spawn } = require('child_process');
+    const pythonScript = `
+import sys
+sys.path.append('${process.cwd()}')
+from paper_commands import handle_paper_buy
+import json
+
+result = handle_paper_buy('${symbol}', '${direction}', ${confidence})
+print(json.dumps(result))
+`;
+    
+    const result = await executePythonScript(pythonScript);
+    await interaction.editReply(result);
+    
+  } catch (error) {
+    console.error('Paper buy error:', error);
+    await interaction.editReply('❌ Failed to create paper trade.');
+  }
+}
+
+async function executePythonScript(script) {
+  return new Promise((resolve, reject) => {
+    const pythonProcess = spawn('python3', ['-c', script]);
+    let stdout = '';
+    let stderr = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`Python script exited with code ${code}:`, stderr);
+        reject(new Error(`Python script failed: ${stderr}`));
+        return;
+      }
+
+      try {
+        const result = JSON.parse(stdout.trim());
+        resolve(result);
+      } catch (error) {
+        console.error('Failed to parse Python output:', stdout, stderr);
+        reject(new Error('Invalid JSON from Python script'));
+      }
+    });
+
+    pythonProcess.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
 async function handleHelp(interaction) {
   const embed = new EmbedBuilder()
     .setTitle('❓ Kronos Bot Commands')
@@ -432,6 +745,16 @@ async function handleHelp(interaction) {
       { name: '/help', value: 'Show this help', inline: true },
       { name: '/predict [symbol]', value: 'Get prediction for symbol', inline: true },
       { name: '/kronos [action]', value: 'Main Kronos command with all actions', inline: true }
+    )
+    .addFields(
+      { name: '📊 Paper Trading', value: 'Auto-tracks Kronos signals with virtual account', inline: false },
+      { name: '/paper-start', value: 'Start paper trading ($10k virtual)', inline: true },
+      { name: '/paper-stats', value: 'Show win rate, P&L, metrics', inline: true },
+      { name: '/paper-portfolio', value: 'View open virtual trades', inline: true },
+      { name: '/paper-history', value: 'Past trade history', inline: true },
+      { name: '/paper-close', value: 'Close trade(s)', inline: true },
+      { name: '/paper-reset', value: 'Reset virtual account', inline: true },
+      { name: '/paper-buy', value: 'Manually enter trade', inline: true }
     )
     .addFields(
       { name: '📊 How it works', value: 'Kronos AI analyzes candlestick patterns to predict price movements. Signals are sent when confidence > 70%.', inline: false },
