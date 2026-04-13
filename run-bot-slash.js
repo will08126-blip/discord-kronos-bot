@@ -44,7 +44,7 @@ class RealKronosValidator {
     this.config = {
       enabled: true,
       weight: 0.3,
-      minConfidence: 0.7,
+      minConfidence: 0.75,  // Increased for tighter 1% SL / 2% TP
       modelPath: './models/kronos-small',
       tokenizerPath: './models/tokenizer'
     };
@@ -148,7 +148,7 @@ print(result)
       const ensembleSignal = await this.getEnsembleAnalysis(symbol, timeframe, kronosSignal);
       
       // Auto-create paper trade if enabled and high confidence
-      if (this.paperTrackingEnabled && ensembleSignal.confidence >= 0.7) {
+      if (this.paperTrackingEnabled && ensembleSignal.confidence >= 0.75) {
         this.createPaperTrade(ensembleSignal);
       }
       
@@ -398,7 +398,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       case 'paper-buy':
         const buySymbol = options.getString('symbol');
         const direction = options.getString('direction');
-        const confidence = options.getNumber('confidence') || 0.7;
+        const confidence = options.getNumber('confidence') || 0.75;
         await handlePaperBuy(interaction, buySymbol, direction, confidence);
         break;
       
@@ -593,12 +593,12 @@ async function sendKronosSignal(signal, channel) {
   // Determine suggested leverage
   let leverage = '1x';
   if (signal.confidence >= 0.85) leverage = '25x';
-  else if (signal.confidence >= 0.75) leverage = '15x';
-  else if (signal.confidence >= 0.7) leverage = '5x';
+  else if (signal.confidence >= 0.8) leverage = '15x';
+  else if (signal.confidence >= 0.75) leverage = '5x';
   
   // Paper trade status
   let paperStatus = '';
-  if (signal.confidence >= 0.7) {
+  if (signal.confidence >= 0.75) {
     paperStatus = '📝 **Auto-tracked in paper trading**';
   }
   
@@ -630,7 +630,7 @@ async function handleStatus(interaction) {
       { name: 'Channel', value: CHANNEL_ID || 'Not set', inline: true },
       { name: 'Kronos Mode', value: 'Real Predictions', inline: true },
       { name: 'Scan Interval', value: '5 minutes', inline: true },
-      { name: 'Min Confidence', value: '70%', inline: true },
+      { name: 'Min Confidence', value: '75%', inline: true },
       { name: 'Assets', value: 'BTC, ETH, SOL', inline: true }
     )
     .setTimestamp();
@@ -644,7 +644,7 @@ async function handleTest(interaction) {
     direction: 'LONG',
     entryPrice: 50000 + Math.random() * 2000,
     predictedExitPrice: 52000 + Math.random() * 3000,
-    confidence: 0.7 + Math.random() * 0.25,
+    confidence: 0.75 + Math.random() * 0.2,
     timeframe: '15m',
     timestamp: new Date(),
     source: 'TEST'
@@ -902,7 +902,7 @@ async function handleHelp(interaction) {
       { name: '/paper-buy', value: 'Manually enter trade', inline: true }
     )
     .addFields(
-      { name: '📊 How it works', value: 'Kronos AI analyzes candlestick patterns to predict price movements. Signals are sent when confidence > 70%.', inline: false },
+      { name: '📊 How it works', value: 'Kronos AI analyzes candlestick patterns to predict price movements. Signals are sent when confidence > 75%.', inline: false },
       { name: '⚠️ Note', value: 'Using real Kronos AI predictions (110MB models loaded)', inline: false }
     )
     .setTimestamp();

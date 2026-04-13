@@ -179,7 +179,7 @@ def handle_paper_start(balance: float = 2000.0):  # Default $2000
             "color": 0x00FF00,
             "fields": [
                 {"name": "Initial Balance", "value": f"${balance:,.2f}", "inline": True},
-                {"name": "Trade Size", "value": "Dynamic: 4% risk, smart leverage (5x-25x)", "inline": True},
+                {"name": "Trade Size", "value": "Dynamic: 4% risk, 1% SL / 2% TP, smart leverage", "inline": True},
                 {"name": "Leverage", "value": "1-25x (based on confidence)", "inline": True}
             ],
             "timestamp": datetime.now().isoformat(),

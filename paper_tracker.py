@@ -26,15 +26,15 @@ class PaperTrade:
         self.confidence = signal.get('confidence', 0.5)
         self.portfolio_capital = portfolio_capital
         
-        # Calculate stop loss and take profit (3% SL, 5% TP)
+        # Calculate stop loss and take profit (1% SL, 2% TP) - Professional leverage trading
         if self.direction == 'LONG':
-            self.stop_loss = entry_price * 0.97  # 3% stop loss
-            self.take_profit = entry_price * 1.05  # 5% take profit
-            self.stop_loss_percent = 0.03
+            self.stop_loss = entry_price * 0.99  # 1% stop loss
+            self.take_profit = entry_price * 1.02  # 2% take profit
+            self.stop_loss_percent = 0.01
         else:  # SHORT
-            self.stop_loss = entry_price * 1.03  # 3% stop loss
-            self.take_profit = entry_price * 0.95  # 5% take profit
-            self.stop_loss_percent = 0.03
+            self.stop_loss = entry_price * 1.01  # 1% stop loss
+            self.take_profit = entry_price * 0.98  # 2% take profit
+            self.stop_loss_percent = 0.01
         
         # RISK: 4% of capital per trade
         risk_amount = portfolio_capital * 0.04  # $80 on $2000
