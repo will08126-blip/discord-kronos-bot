@@ -14,30 +14,85 @@ import random
 class PaperTrade:
     """Represents a virtual paper trade"""
     
-    def __init__(self, signal: Dict, entry_price: float, leverage: float = 1.0):
+    def __init__(self, signal: Dict, entry_price: float, portfolio_capital: float = 2000):
         self.id = f"trade_{int(time.time())}_{random.randint(1000, 9999)}"
         self.signal_id = signal.get('id', 'unknown')
         self.symbol = signal.get('symbol', 'BTC/USDT')
         self.direction = signal.get('direction', 'LONG')  # LONG or SHORT
         self.entry_price = entry_price
         self.entry_time = datetime.now().isoformat()
-        self.leverage = leverage
-        self.position_size = 1000  # Fixed $1000 position
+        
+        # SMART POSITION SIZING
+        self.confidence = signal.get('confidence', 0.5)
+        self.portfolio_capital = portfolio_capital
+        
+        # Calculate stop loss and take profit (3% SL, 5% TP)
+        if self.direction == 'LONG':
+            self.stop_loss = entry_price * 0.97  # 3% stop loss
+            self.take_profit = entry_price * 1.05  # 5% take profit
+            self.stop_loss_percent = 0.03
+        else:  # SHORT
+            self.stop_loss = entry_price * 1.03  # 3% stop loss
+            self.take_profit = entry_price * 0.95  # 5% take profit
+            self.stop_loss_percent = 0.03
+        
+        # RISK: 4% of capital per trade
+        risk_amount = portfolio_capital * 0.04  # $80 on $2000
+        
+        # Position size based on risk and stop-loss distance
+        # Formula: position_size = risk_amount / (entry_price * stop_loss_percent)
+        risk_per_share = entry_price * self.stop_loss_percent
+        
+        # Calculate maximum position we can take (50% of capital)
+        max_position_by_capital = (portfolio_capital * 0.5) / entry_price
+        
+        # Calculate ideal position based on risk
+        ideal_position_by_risk = risk_amount / risk_per_share
+        
+        # Use the SMALLER of the two (risk-based or capital-based)
+        base_position_size = min(ideal_position_by_risk, max_position_by_capital)
+        
+        # SMART LEVERAGE: Calculate based on confidence
+        # Start with confidence-based leverage (5x-25x)
+        confidence_leverage = max(5, min(25, self.confidence * 30))
+        
+        # Calculate what leverage this position represents
+        # leverage = position_size / base_position_without_leverage
+        # But base_position_without_leverage would be risk_amount / risk_per_share
+        # Actually, let's think differently...
+        
+        # If we're using less than ideal position (due to capital constraints),
+        # we can use higher leverage to get closer to our risk target
+        if base_position_size < ideal_position_by_risk:
+            # We're capital-constrained, use higher leverage to increase risk
+            # But cap at reasonable level
+            needed_leverage = ideal_position_by_risk / base_position_size
+            self.leverage = min(confidence_leverage, needed_leverage, 25)
+        else:
+            # We're using ideal position, use confidence-based leverage
+            self.leverage = confidence_leverage
+        
+        # Final position size with leverage
+        self.position_size = base_position_size * self.leverage
+        
+        # Convert to notional value (position value in USD)
+        self.notional_value = self.position_size * entry_price
+        
+        # Final safety check: cap at 50% of portfolio
+        max_position_value = portfolio_capital * 0.5
+        if self.notional_value > max_position_value:
+            # Scale down
+            scale_factor = max_position_value / self.notional_value
+            self.position_size *= scale_factor
+            self.notional_value = self.position_size * entry_price
+            self.leverage *= scale_factor
+        
         self.status = 'OPEN'
         self.exit_price = None
         self.exit_time = None
         self.pnl = 0.0
         self.pnl_percent = 0.0
         self.source = signal.get('source', 'KRONOS')
-        self.confidence = signal.get('confidence', 0.5)
-        
-        # Calculate stop loss and take profit
-        if self.direction == 'LONG':
-            self.stop_loss = entry_price * 0.97  # 3% stop loss
-            self.take_profit = entry_price * 1.05  # 5% take profit
-        else:  # SHORT
-            self.stop_loss = entry_price * 1.03  # 3% stop loss
-            self.take_profit = entry_price * 0.95  # 5% take profit
     
     def to_dict(self) -> Dict:
         """Convert to dictionary for JSON storage"""
@@ -50,6 +105,10 @@ class PaperTrade:
             'entry_time': self.entry_time,
             'leverage': self.leverage,
             'position_size': self.position_size,
+            'position_value': self.notional_value,
+            'leverage': self.leverage,
+            'risk_percent': 4.0,
+            'stop_loss_percent': self.stop_loss_percent,
             'status': self.status,
             'exit_price': self.exit_price,
             'exit_time': self.exit_time,
@@ -143,6 +202,11 @@ class PaperTradingTracker:
         self.portfolio_file = os.path.join(data_dir, 'portfolio.json')
         
         self.trades: List[PaperTrade] = []
+        
+        # Risk management settings
+        self.risk_per_trade = 0.04  # 4% risk per trade
+        self.max_concurrent_trades = 3
+        self.max_position_size_percent = 0.5  # Max 50% of capital in one trade
         self.stats: Dict = {}
         self.portfolio: Dict = {
             'balance': 10000.0,  # Starting balance
@@ -219,7 +283,9 @@ class PaperTradingTracker:
                 leverage = 1.0
             
             # Create trade
-            trade = PaperTrade(signal, current_price, leverage)
+            # Get current portfolio value for position sizing
+            portfolio_value = self.get_portfolio_value()
+            trade = PaperTrade(signal, current_price, portfolio_value)
             self.trades.append(trade)
             
             # Update portfolio

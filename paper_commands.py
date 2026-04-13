@@ -167,7 +167,7 @@ def calculate_duration(start_time: str, end_time: str = None) -> str:
         return "N/A"
 
 # Command handlers for Discord
-def handle_paper_start(balance: float = 10000.0):
+def handle_paper_start(balance: float = 2000.0):  # Default $2000
     """Start paper trading with initial balance"""
     tracker.reset_portfolio(balance)
     stats = tracker.get_stats()

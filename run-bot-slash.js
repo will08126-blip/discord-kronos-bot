@@ -368,7 +368,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       
       // Paper Trading Commands
       case 'paper-start':
-        const balance = options.getNumber('balance') || 10000;
+        const balance = options.getNumber('balance') || 2000;  // Default $2000
         await handlePaperStart(interaction, balance);
         break;
       
@@ -893,7 +893,7 @@ async function handleHelp(interaction) {
     )
     .addFields(
       { name: '📊 Paper Trading', value: 'Auto-tracks Kronos signals with virtual account', inline: false },
-      { name: '/paper-start', value: 'Start paper trading ($10k virtual)', inline: true },
+      { name: '/paper-start', value: 'Start paper trading ($2k virtual)', inline: true },
       { name: '/paper-stats', value: 'Show win rate, P&L, metrics', inline: true },
       { name: '/paper-portfolio', value: 'View open virtual trades', inline: true },
       { name: '/paper-history', value: 'Past trade history', inline: true },
